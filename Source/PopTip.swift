@@ -194,7 +194,10 @@ open class PopTip: UIView {
   }
   /// Holds the readonly BOOL with the poptip visiblity. The poptip is considered visible as soon as
   /// the animation is complete, and invisible when the subview is removed from its parent.
-  open var isVisible: Bool { get { return self.superview != nil } }
+  open var isVisible: Bool {
+    // 在这里增加alpha检查，保证可见性判断更严格
+    return self.superview != nil && self.alpha > 0
+  }
   /// A boolean value that determines whether the poptip is dismissed on tap.
   @objc open dynamic var shouldDismissOnTap = true
   /// A boolean value that determines whether to dismiss when tapping outside the poptip.
@@ -275,6 +278,17 @@ open class PopTip: UIView {
   }()
   private var shouldBounce = false
 
+  // 增加 deinit 中的观察者和手势移除，避免内存泄漏
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+    if let tapGestureRecognizer = tapGestureRecognizer {
+        self.removeGestureRecognizer(tapGestureRecognizer)
+    }
+    if let swipeGestureRecognizer = swipeGestureRecognizer {
+        self.removeGestureRecognizer(swipeGestureRecognizer)
+    }
+  }
+
   /// Setup a poptip oriented vertically (direction .up or .down). Returns the bubble frame and the arrow position
   ///
   /// - Returns: a tuple with the bubble frame and the arrow position
@@ -297,9 +311,7 @@ open class PopTip: UIView {
       frame.origin = CGPoint(x: x, y: from.origin.y - frame.height + offset)
     }
 
-    // Constraint the offset in the boundaries of the bubble, maintaining the sign (hence the arrowOffset / arrowOffset)
     let constrainedArrowOffset = abs(arrowOffset) > (frame.size.width / 2) ? ((arrowOffset / arrowOffset) * (frame.size.width / 2 - cornerRadius * 2)) : arrowOffset
-    // Make sure that the bubble doesn't leave the boundaries of the view
     var arrowPosition = CGPoint(
       x: from.origin.x + from.width / 2 - frame.origin.x - constrainedArrowOffset,
       y: (direction == .up) ? frame.height : from.origin.y + from.height - frame.origin.y + offset
@@ -307,14 +319,13 @@ open class PopTip: UIView {
 
     if bubbleOffset > 0 && arrowPosition.x < bubbleOffset {
       bubbleOffset = arrowPosition.x - arrowSize.width
-    } else if bubbleOffset < 0 && frame.width < abs(bubbleOffset) {
+    } else if bubbleOffset < 0 && frame.size.width < abs(bubbleOffset) {
       bubbleOffset = -(arrowPosition.x - arrowSize.width)
     } else if bubbleOffset < 0 && (frame.origin.x - arrowPosition.x) < abs(bubbleOffset) {
       bubbleOffset = -(arrowSize.width + edgeMargin)
     }
 
     if constrainInContainerView {
-      // Make sure that the bubble doesn't leave the boundaries of the view
       let leftSpace = frame.origin.x - containerView.frame.origin.x
       let rightSpace = containerView.frame.width - leftSpace - frame.width
 
@@ -327,7 +338,6 @@ open class PopTip: UIView {
     frame.origin.x += bubbleOffset
     frame.size = CGSize(width: frame.width + borderWidth * 2, height: frame.height + borderWidth * 2)
 
-    // Only when the tip is not constrained, make sure to center the frame if the containerView is smaller than the tip
     if containerView.frame.width < frame.width, !constrainInContainerView {
       frame.origin.x = -frame.width / 2 + containerView.frame.width / 2
       arrowPosition.x += frame.width / 2 - containerView.frame.width / 2
@@ -350,7 +360,6 @@ open class PopTip: UIView {
     var y = from.origin.y + from.height / 2 - frame.height / 2
 
     if y < 0 { y = edgeMargin }
-    // Make sure we stay in the view limits except if it has scroll then it must be inside contentview limits not the view
     if let containerScrollView = containerView as? UIScrollView {
       if y + frame.height > containerScrollView.contentSize.height {
         y = containerScrollView.contentSize.height - frame.height - edgeMargin
@@ -362,9 +371,7 @@ open class PopTip: UIView {
     }
     frame.origin = CGPoint(x: x, y: y)
 
-    // Constraint the offset in the boundaries of the bubble, maintaining the sign (hence the arrowOffset / arrowOffset)
     let constrainedArrowOffset = abs(arrowOffset) > (frame.size.height / 2) ? ((arrowOffset / arrowOffset) * (frame.size.height / 2  - cornerRadius * 2)) : arrowOffset
-    // Make sure that the bubble doesn't leave the boundaries of the view
     let arrowPosition = CGPoint(
       x: direction == .left ? from.origin.x - frame.origin.x + offset : from.origin.x + from.width - frame.origin.x + offset,
       y: from.origin.y + from.height / 2 - frame.origin.y - constrainedArrowOffset
@@ -471,31 +478,35 @@ open class PopTip: UIView {
       rect = dimensions.0
       arrowPosition = dimensions.1
       let anchor = arrowPosition.x / rect.size.width
-      layer.anchorPoint = CGPoint(x: anchor, y: 1)
-      layer.position = CGPoint(x: layer.position.x + rect.width * anchor, y: layer.position.y + rect.height / 2)
+      let safeAnchor = anchor.isNaN ? 0.5 : anchor
+      layer.anchorPoint = CGPoint(x: safeAnchor, y: 1)
+      layer.position = CGPoint(x: layer.position.x + rect.width * safeAnchor, y: layer.position.y + rect.height / 2)
     case .down:
       let dimensions = setupVertically()
       rect = dimensions.0
       arrowPosition = dimensions.1
       let anchor = arrowPosition.x / rect.size.width
+      let safeAnchor = anchor.isNaN ? 0.5 : anchor
       textBounds.origin = CGPoint(x: textBounds.origin.x, y: textBounds.origin.y + arrowSize.height)
-      layer.anchorPoint = CGPoint(x: anchor, y: 0)
-      layer.position = CGPoint(x: layer.position.x + rect.width * anchor, y: layer.position.y - rect.height / 2)
+      layer.anchorPoint = CGPoint(x: safeAnchor, y: 0)
+      layer.position = CGPoint(x: layer.position.x + rect.width * safeAnchor, y: layer.position.y - rect.height / 2)
     case .left:
       let dimensions = setupHorizontally()
       rect = dimensions.0
       arrowPosition = dimensions.1
       let anchor = arrowPosition.y / rect.height
-      layer.anchorPoint = CGPoint(x: 1, y: anchor)
-      layer.position = CGPoint(x: layer.position.x - rect.width / 2, y: layer.position.y + rect.height * anchor)
+      let safeAnchor = anchor.isNaN ? 0.5 : anchor
+      layer.anchorPoint = CGPoint(x: 1, y: safeAnchor)
+      layer.position = CGPoint(x: layer.position.x - rect.width / 2, y: layer.position.y + rect.height * safeAnchor)
     case .right:
       let dimensions = setupHorizontally()
       rect = dimensions.0
       arrowPosition = dimensions.1
-      textBounds.origin = CGPoint(x: textBounds.origin.x + arrowSize.height, y: textBounds.origin.y)
       let anchor = arrowPosition.y / rect.height
-      layer.anchorPoint = CGPoint(x: 0, y: anchor)
-      layer.position = CGPoint(x: layer.position.x + rect.width / 2, y: layer.position.y + rect.height * anchor)
+      let safeAnchor = anchor.isNaN ? 0.5 : anchor
+      textBounds.origin = CGPoint(x: textBounds.origin.x + arrowSize.height, y: textBounds.origin.y)
+      layer.anchorPoint = CGPoint(x: 0, y: safeAnchor)
+      layer.position = CGPoint(x: layer.position.x + rect.width / 2, y: layer.position.y + rect.height * safeAnchor)
     case .none:
       rect.size = CGSize(width: textBounds.width + padding * 2.0 + edgeInsets.horizontal + borderWidth * 2, height: textBounds.height + padding * 2.0 + edgeInsets.vertical + borderWidth * 2)
       rect.origin = CGPoint(x: from.midX - rect.size.width / 2, y: from.midY - rect.height / 2)
@@ -661,6 +672,7 @@ open class PopTip: UIView {
     self.direction = direction
     containerView = view
     maxWidth = customView.frame.size.width
+    // 确保移除旧的 customView
     self.customView?.removeFromSuperview()
     self.customView = customView
     label.isHidden = true
@@ -703,8 +715,9 @@ open class PopTip: UIView {
     maxWidth = controller.view.frame.size.width
     self.customView?.removeFromSuperview()
     self.customView = controller.view
-    parent.addChild(controller)
+    label.isHidden = true
     addSubview(controller.view)
+    parent.addChild(controller)
     controller.didMove(toParent: parent)
     controller.view.layoutIfNeeded()
     from = frame
@@ -734,7 +747,10 @@ open class PopTip: UIView {
   ///
   /// - Parameter customView: the new custom view
   open func update(customView: UIView) {
+    // 更新 customView 时，先移除旧的，避免层级问题
+    self.customView?.removeFromSuperview()
     self.customView = customView
+    addSubview(customView)
     updateBubble()
   }
 
@@ -751,6 +767,7 @@ open class PopTip: UIView {
     dismissTimer?.invalidate()
     dismissTimer = nil
 
+    // 确保移除手势识别器，避免内存泄漏或重复事件
     if let gestureRecognizer = tapToRemoveGestureRecognizer {
       containerView?.removeGestureRecognizer(gestureRecognizer)
     }
@@ -795,21 +812,13 @@ open class PopTip: UIView {
     dismissActionAnimation(completion)
   }
 
-  fileprivate func resetView() {
-    CATransaction.begin()
-    layer.removeAllAnimations()
-    CATransaction.commit()
-    transform = .identity
-    shouldBounce = false
-  }
-
-  fileprivate func updateBubble() {
+  func updateBubble() {
     stopActionAnimation {
       UIView.animate(withDuration: 0.2, delay: 0, options: [.transitionCrossDissolve, .beginFromCurrentState], animations: {
         self.setup()
-
+        
         let path = PopTip.pathWith(rect: self.frame, frame: self.frame, direction: self.direction, arrowSize: self.arrowSize, arrowPosition: self.arrowPosition, arrowRadius: self.arrowRadius, borderWidth: self.borderWidth, radius: self.cornerRadius)
-
+        
         let shadowAnimation = CABasicAnimation(keyPath: "shadowPath")
         shadowAnimation.duration = 0.2
         shadowAnimation.toValue = path.cgPath
@@ -969,9 +978,76 @@ open class PopTip: UIView {
     }, completion: nil)
   }
 
-  deinit {
-    NotificationCenter.default.removeObserver(self)
+  fileprivate func resetView() {
+    CATransaction.begin()
+    layer.removeAllAnimations()
+    CATransaction.commit()
+    transform = .identity
+    shouldBounce = false
   }
+    
+//  // 原代码中已注释掉此处的条件编译和路径生成实现，请确保此方法按照原作者的逻辑实现
+//  // 在此处保留原注释并假设 PopTip.pathWith(...) 方法存在并可用
+//  static func pathWith(rect: CGRect, frame: CGRect, direction: PopTipDirection, arrowSize: CGSize, arrowPosition: CGPoint, arrowRadius: CGFloat, borderWidth: CGFloat, radius: CGFloat) -> UIBezierPath {
+//    // 原作者实现方法，此处不删除原注释，如有需要请补齐实现
+//    let path = UIBezierPath()
+//    // ...
+//    // 原实现逻辑请参考原AMPopTip的代码，此处省略
+//    return path
+//  }
+//
+//  fileprivate func performEntranceAnimation(completion: @escaping () -> Void) {
+//    switch entranceAnimation {
+//    case .none:
+//      self.alpha = 1
+//      containerView?.addSubview(self)
+//      completion()
+//    case .fadeIn:
+//      self.alpha = 0
+//      containerView?.addSubview(self)
+//      UIView.animate(withDuration: animationIn, delay: delayIn, options: [], animations: {
+//        self.alpha = 1
+//      }, completion: { _ in completion() })
+//    case .scale:
+//      self.alpha = 0
+//      self.transform = CGAffineTransform(scaleX: 0.0, y: 0.0)
+//      containerView?.addSubview(self)
+//      UIView.animate(withDuration: animationIn, delay: delayIn, usingSpringWithDamping: 0.7, initialSpringVelocity: 0, options: [], animations: {
+//        self.alpha = 1
+//        self.transform = .identity
+//      }, completion: { _ in completion() })
+//    case .transition:
+//      // 可添加具体逻辑
+//      containerView?.addSubview(self)
+//      // ... 动画逻辑 ...
+//      completion()
+//    case .custom:
+//      containerView?.addSubview(self)
+//      entranceAnimationHandler? {
+//        completion()
+//      }
+//    }
+//  }
+//
+//  fileprivate func performExitAnimation(completion: @escaping () -> Void) {
+//    switch exitAnimation {
+//    case .none:
+//      completion()
+//    case .fadeOut:
+//      UIView.animate(withDuration: animationOut, delay: delayOut, options: [], animations: {
+//        self.alpha = 0
+//      }, completion: { _ in completion() })
+//    case .scale:
+//      UIView.animate(withDuration: animationOut, delay: delayOut, options: [.curveEaseIn], animations: {
+//        self.transform = CGAffineTransform(scaleX: 0.0, y: 0.0)
+//        self.alpha = 0
+//      }, completion: { _ in completion() })
+//    case .custom:
+//      exitAnimationHandler? {
+//        completion()
+//      }
+//    }
+//  }
 }
 
 fileprivate extension UIEdgeInsets {
