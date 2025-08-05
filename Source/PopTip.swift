@@ -747,9 +747,14 @@ open class PopTip: UIView {
     ///
     /// - Parameter customView: the new custom view
     open func update(customView: UIView) {
-        // 更新 customView 时，如果是同一个视图，只更新大小
+        // 更新 customView 时，如果是同一个视图，也需要重新计算布局以防内容变化
         if self.customView == customView {
-            updateCustomViewSize()
+            // 重新计算 maxWidth 以适应可能的内容变化
+            if let containerView = containerView {
+                let availableWidth = containerView.bounds.width - (edgeMargin * 2) - edgeInsets.horizontal - (padding * 2)
+                maxWidth = max(customView.frame.width, availableWidth)
+            }
+            updateBubbleWithoutAnimation()
             return
         }
         
@@ -757,7 +762,7 @@ open class PopTip: UIView {
         self.customView?.removeFromSuperview()
         self.customView = customView
         addSubview(customView)
-        updateBubble()
+        updateBubbleWithoutAnimation()
     }
     
     /// Hides the poptip and removes it from the view. The property `isVisible` will be set to `false` when the animation is complete and the poptip is removed from the parent view.
@@ -836,23 +841,58 @@ open class PopTip: UIView {
         }
     }
     
+    /// 无动画版本的气泡更新方法
+    func updateBubbleWithoutAnimation() {
+        // 禁用所有隐式动画和显式动画
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        CATransaction.setAnimationDuration(0)
+        
+        // 直接停止所有动画和变换
+        shouldBounce = false
+        layer.removeAllAnimations()
+        transform = .identity
+        
+        // 直接更新布局，不使用动画
+        setup()
+        setNeedsDisplay()
+        
+        // 更新阴影路径，不使用动画
+        let path = PopTip.pathWith(rect: self.frame, frame: self.frame, direction: self.direction, arrowSize: self.arrowSize, arrowPosition: self.arrowPosition, arrowRadius: self.arrowRadius, borderWidth: self.borderWidth, radius: self.cornerRadius)
+        layer.shadowPath = path.cgPath
+        
+        CATransaction.commit()
+    }
+    
     func updateCustomViewSize() {
-        guard let customView = customView else { return }
+        guard let customView = customView, let containerView = containerView else { return }
+        
+        // 重新计算可用的最大宽度
+        let availableWidth = containerView.bounds.width - (edgeMargin * 2) - edgeInsets.horizontal - (padding * 2)
+        let oldMaxWidth = maxWidth
+        maxWidth = max(customView.frame.width, availableWidth)
         
         // 重新计算 textBounds
         textBounds = textBounds(for: text, attributedText: attributedText, view: customView, with: font, padding: padding, edges: edgeInsets, in: maxWidth)
         
-        // 根据箭头方向调整位置，避免遮挡箭头
-        if direction == .down {
-            textBounds.origin.y += arrowSize.height
-        } else if direction == .right {
-            textBounds.origin.x += arrowSize.height
+        // 如果尺寸发生了显著变化，需要重新布局整个气泡
+        if abs(oldMaxWidth - maxWidth) > 1.0 || abs(textBounds.width - customView.frame.width) > 1.0 {
+            // 调用完整的重新布局
+            setup()
+            setNeedsDisplay()
+        } else {
+            // 只是微调位置
+            if direction == .down {
+                textBounds.origin.y += arrowSize.height
+            } else if direction == .right {
+                textBounds.origin.x += arrowSize.height
+            }
+            
+            // 禁用隐式动画，直接更新 frame
+            CATransaction.setDisableActions(true)
+            customView.frame = textBounds
+            CATransaction.setDisableActions(false)
         }
-        
-        // 禁用隐式动画，直接更新 frame
-        CATransaction.setDisableActions(true)
-        customView.frame = textBounds
-        CATransaction.setDisableActions(false)
     }
     
     fileprivate func show(duration: TimeInterval? = nil) {
