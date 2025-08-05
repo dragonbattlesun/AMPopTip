@@ -195,8 +195,8 @@ open class PopTip: UIView {
     /// Holds the readonly BOOL with the poptip visiblity. The poptip is considered visible as soon as
     /// the animation is complete, and invisible when the subview is removed from its parent.
     open var isVisible: Bool {
-        // 在这里增加alpha检查，保证可见性判断更严格
-        return self.superview != nil && self.alpha > 0
+        // 在这里增加alpha检查和动画状态检查，保证可见性判断更严格
+        return self.superview != nil && self.alpha > 0 && !isPerformingExitAnimation
     }
     /// A boolean value that determines whether the poptip is dismissed on tap.
     @objc open dynamic var shouldDismissOnTap = true
@@ -260,7 +260,11 @@ open class PopTip: UIView {
     fileprivate var attributedText: NSAttributedString?
     fileprivate var paragraphStyle = NSMutableParagraphStyle()
     fileprivate var swipeGestureRecognizer: UISwipeGestureRecognizer?
-    fileprivate var dismissTimer: Timer?
+    fileprivate var dismissTimer: Timer? {
+        willSet {
+            dismissTimer?.invalidate()
+        }
+    }
     fileprivate var textBounds = CGRect.zero
     fileprivate var maxWidth = CGFloat(0)
     fileprivate var customView: UIView?
@@ -280,12 +284,19 @@ open class PopTip: UIView {
     
     // 增加 deinit 中的观察者和手势移除，避免内存泄漏
     deinit {
+        dismissTimer?.invalidate()
+        dismissTimer = nil
         NotificationCenter.default.removeObserver(self)
+        
+        // 安全移除手势识别器
         if let tapGestureRecognizer = tapGestureRecognizer {
             self.removeGestureRecognizer(tapGestureRecognizer)
         }
         if let swipeGestureRecognizer = swipeGestureRecognizer {
             self.removeGestureRecognizer(swipeGestureRecognizer)
+        }
+        if let tapToRemoveGestureRecognizer = tapToRemoveGestureRecognizer {
+            containerView?.removeGestureRecognizer(tapToRemoveGestureRecognizer)
         }
     }
     
@@ -311,7 +322,7 @@ open class PopTip: UIView {
             frame.origin = CGPoint(x: x, y: from.origin.y - frame.height + offset)
         }
         
-        let constrainedArrowOffset = abs(arrowOffset) > (frame.size.width / 2) ? ((arrowOffset / arrowOffset) * (frame.size.width / 2 - cornerRadius * 2)) : arrowOffset
+        let constrainedArrowOffset = abs(arrowOffset) > (frame.size.width / 2) ? ((arrowOffset != 0 ? arrowOffset / abs(arrowOffset) : 1) * (frame.size.width / 2 - cornerRadius * 2)) : arrowOffset
         var arrowPosition = CGPoint(
             x: from.origin.x + from.width / 2 - frame.origin.x - constrainedArrowOffset,
             y: (direction == .up) ? frame.height : from.origin.y + from.height - frame.origin.y + offset
@@ -371,7 +382,7 @@ open class PopTip: UIView {
         }
         frame.origin = CGPoint(x: x, y: y)
         
-        let constrainedArrowOffset = abs(arrowOffset) > (frame.size.height / 2) ? ((arrowOffset / arrowOffset) * (frame.size.height / 2  - cornerRadius * 2)) : arrowOffset
+        let constrainedArrowOffset = abs(arrowOffset) > (frame.size.height / 2) ? ((arrowOffset != 0 ? arrowOffset / abs(arrowOffset) : 1) * (frame.size.height / 2  - cornerRadius * 2)) : arrowOffset
         let arrowPosition = CGPoint(
             x: direction == .left ? from.origin.x - frame.origin.x + offset : from.origin.x + from.width - frame.origin.x + offset,
             y: from.origin.y + from.height / 2 - frame.origin.y - constrainedArrowOffset
@@ -477,16 +488,16 @@ open class PopTip: UIView {
             let dimensions = setupVertically()
             rect = dimensions.0
             arrowPosition = dimensions.1
-            let anchor = arrowPosition.x / rect.size.width
-            let safeAnchor = anchor.isNaN ? 0.5 : anchor
+            let anchor = rect.size.width > 0 ? arrowPosition.x / rect.size.width : 0.5
+            let safeAnchor = (anchor.isNaN || anchor.isInfinite) ? 0.5 : max(0, min(1, anchor))
             layer.anchorPoint = CGPoint(x: safeAnchor, y: 1)
             layer.position = CGPoint(x: layer.position.x + rect.width * safeAnchor, y: layer.position.y + rect.height / 2)
         case .down:
             let dimensions = setupVertically()
             rect = dimensions.0
             arrowPosition = dimensions.1
-            let anchor = arrowPosition.x / rect.size.width
-            let safeAnchor = anchor.isNaN ? 0.5 : anchor
+            let anchor = rect.size.width > 0 ? arrowPosition.x / rect.size.width : 0.5
+            let safeAnchor = (anchor.isNaN || anchor.isInfinite) ? 0.5 : max(0, min(1, anchor))
             textBounds.origin = CGPoint(x: textBounds.origin.x, y: textBounds.origin.y + arrowSize.height)
             layer.anchorPoint = CGPoint(x: safeAnchor, y: 0)
             layer.position = CGPoint(x: layer.position.x + rect.width * safeAnchor, y: layer.position.y - rect.height / 2)
@@ -494,16 +505,16 @@ open class PopTip: UIView {
             let dimensions = setupHorizontally()
             rect = dimensions.0
             arrowPosition = dimensions.1
-            let anchor = arrowPosition.y / rect.height
-            let safeAnchor = anchor.isNaN ? 0.5 : anchor
+            let anchor = rect.height > 0 ? arrowPosition.y / rect.height : 0.5
+            let safeAnchor = (anchor.isNaN || anchor.isInfinite) ? 0.5 : max(0, min(1, anchor))
             layer.anchorPoint = CGPoint(x: 1, y: safeAnchor)
             layer.position = CGPoint(x: layer.position.x - rect.width / 2, y: layer.position.y + rect.height * safeAnchor)
         case .right:
             let dimensions = setupHorizontally()
             rect = dimensions.0
             arrowPosition = dimensions.1
-            let anchor = arrowPosition.y / rect.height
-            let safeAnchor = anchor.isNaN ? 0.5 : anchor
+            let anchor = rect.height > 0 ? arrowPosition.y / rect.height : 0.5
+            let safeAnchor = (anchor.isNaN || anchor.isInfinite) ? 0.5 : max(0, min(1, anchor))
             textBounds.origin = CGPoint(x: textBounds.origin.x + arrowSize.height, y: textBounds.origin.y)
             layer.anchorPoint = CGPoint(x: 0, y: safeAnchor)
             layer.position = CGPoint(x: layer.position.x + rect.width / 2, y: layer.position.y + rect.height * safeAnchor)
@@ -747,6 +758,13 @@ open class PopTip: UIView {
     ///
     /// - Parameter customView: the new custom view
     open func update(customView: UIView) {
+        // 处理 hostingController 清理
+        if let hostingController = self.hostingController {
+            hostingController.willMove(toParent: nil)
+            hostingController.removeFromParent()
+            self.hostingController = nil
+        }
+        
         // 更新 customView 时，如果是同一个视图，也需要重新计算布局以防内容变化
         if self.customView == customView {
             // 重新计算 maxWidth 以适应可能的内容变化
@@ -761,7 +779,9 @@ open class PopTip: UIView {
         // 如果是不同的视图，移除旧的并添加新的
         self.customView?.removeFromSuperview()
         self.customView = customView
+        
         addSubview(customView)
+        
         updateBubbleWithoutAnimation()
     }
     
@@ -769,7 +789,7 @@ open class PopTip: UIView {
     ///
     /// - Parameter forced: Force the removal, ignoring running animations
     @objc open func hide(forced: Bool = false) {
-        if !forced && isAnimating {
+        if !forced && (isAnimating || isPerformingExitAnimation) {
             return
         }
         
@@ -781,9 +801,11 @@ open class PopTip: UIView {
         // 确保移除手势识别器，避免内存泄漏或重复事件
         if let gestureRecognizer = tapToRemoveGestureRecognizer {
             containerView?.removeGestureRecognizer(gestureRecognizer)
+            tapToRemoveGestureRecognizer = nil
         }
         if let gestureRecognizer = swipeGestureRecognizer {
             containerView?.removeGestureRecognizer(gestureRecognizer)
+            swipeGestureRecognizer = nil
         }
         
         let completion = {
@@ -798,6 +820,7 @@ open class PopTip: UIView {
             self.removeFromSuperview()
             self.layer.removeAllAnimations()
             self.transform = .identity
+            
             self.isAnimating = false
             self.isPerformingExitAnimation = false
             self.dismissHandler?(self)
