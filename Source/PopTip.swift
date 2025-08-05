@@ -880,9 +880,13 @@ open class PopTip: UIView {
         setup()
         setNeedsDisplay()
         
-        // 更新阴影路径，不使用动画
+        // 更新阴影路径和阴影属性，不使用动画
         let path = PopTip.pathWith(rect: self.frame, frame: self.frame, direction: self.direction, arrowSize: self.arrowSize, arrowPosition: self.arrowPosition, arrowRadius: self.arrowRadius, borderWidth: self.borderWidth, radius: self.cornerRadius)
         layer.shadowPath = path.cgPath
+        layer.shadowOpacity = shadowOpacity
+        layer.shadowRadius = CGFloat(shadowRadius)
+        layer.shadowOffset = shadowOffset
+        layer.shadowColor = shadowColor.cgColor
         
         CATransaction.commit()
     }
@@ -1068,7 +1072,14 @@ open class PopTip: UIView {
     
     fileprivate func resetView() {
         CATransaction.begin()
+        CATransaction.setDisableActions(true)
         layer.removeAllAnimations()
+        // 重置阴影属性
+        layer.shadowOpacity = 0
+        layer.shadowRadius = 0
+        layer.shadowOffset = .zero
+        layer.shadowColor = UIColor.clear.cgColor
+        layer.shadowPath = nil
         CATransaction.commit()
         transform = .identity
         shouldBounce = false
