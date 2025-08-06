@@ -891,37 +891,6 @@ open class PopTip: UIView {
         CATransaction.commit()
     }
     
-    func updateCustomViewSize() {
-        guard let customView = customView, let containerView = containerView else { return }
-        
-        // 重新计算可用的最大宽度
-        let availableWidth = containerView.bounds.width - (edgeMargin * 2) - edgeInsets.horizontal - (padding * 2)
-        let oldMaxWidth = maxWidth
-        maxWidth = max(customView.frame.width, availableWidth)
-        
-        // 重新计算 textBounds
-        textBounds = textBounds(for: text, attributedText: attributedText, view: customView, with: font, padding: padding, edges: edgeInsets, in: maxWidth)
-        
-        // 如果尺寸发生了显著变化，需要重新布局整个气泡
-        if abs(oldMaxWidth - maxWidth) > 1.0 || abs(textBounds.width - customView.frame.width) > 1.0 {
-            // 调用完整的重新布局
-            setup()
-            setNeedsDisplay()
-        } else {
-            // 只是微调位置
-            if direction == .down {
-                textBounds.origin.y += arrowSize.height
-            } else if direction == .right {
-                textBounds.origin.x += arrowSize.height
-            }
-            
-            // 禁用隐式动画，直接更新 frame
-            CATransaction.setDisableActions(true)
-            customView.frame = textBounds
-            CATransaction.setDisableActions(false)
-        }
-    }
-    
     fileprivate func show(duration: TimeInterval? = nil) {
         isAnimating = true
         dismissTimer?.invalidate()
@@ -1087,11 +1056,11 @@ open class PopTip: UIView {
 }
 
 fileprivate extension UIEdgeInsets {
-  var horizontal: CGFloat {
-    return self.left + self.right
-  }
-
-  var vertical: CGFloat {
-    return self.top + self.bottom
-  }
+    var horizontal: CGFloat {
+        return self.left + self.right
+    }
+    
+    var vertical: CGFloat {
+        return self.top + self.bottom
+    }
 }
