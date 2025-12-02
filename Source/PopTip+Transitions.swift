@@ -70,21 +70,6 @@ public extension PopTip {
     }
     containerView?.addSubview(self)
 
-    UIView.animate(withDuration: animationIn, delay: delayIn, usingSpringWithDamping: 0.6, initialSpringVelocity: 1.5, options: [.curveEaseInOut, .beginFromCurrentState], animations: { 
-      self.transform = .identity
-      self.backgroundMask?.alpha = 1
-    }) { (_) in
-      completion()
-    }
-  }
-
-  private func entranceScale(completion: @escaping () -> Void) {
-    transform = CGAffineTransform(scaleX: 0, y: 0)
-    if shouldShowMask {
-      addBackgroundMask(to: containerView)
-    }
-    containerView?.addSubview(self)
-
     UIView.animate(withDuration: animationIn, delay: delayIn, usingSpringWithDamping: 0.6, initialSpringVelocity: 1.5, options: [.curveEaseInOut, .beginFromCurrentState], animations: {
       self.transform = .identity
       self.backgroundMask?.alpha = 1
@@ -93,6 +78,34 @@ public extension PopTip {
     }
   }
 
+    private func entranceScale(completion: @escaping () -> Void) {
+        // 初始缩放与透明度设置，避免从 0 尺寸带来的布局抖动
+        transform = CGAffineTransform(scaleX: 0.85, y: 0.85)
+        alpha = 0
+        
+        if shouldShowMask {
+            addBackgroundMask(to: containerView)
+        }
+        containerView?.addSubview(self)
+        
+        UIView.animate(
+            withDuration: animationIn,
+            delay: delayIn,
+            usingSpringWithDamping: 0.8,
+            initialSpringVelocity: 0.8,
+            options: [.curveEaseInOut, .beginFromCurrentState],
+            animations: {
+                // 回到正常尺寸并渐显
+                self.transform = .identity
+                self.alpha = 1
+                self.backgroundMask?.alpha = 1
+            },
+            completion: { _ in
+                completion()
+            }
+        )
+    }
+
   private func entranceFadeIn(completion: @escaping () -> Void) {
     if shouldShowMask {
       addBackgroundMask(to: containerView)
@@ -100,7 +113,7 @@ public extension PopTip {
     containerView?.addSubview(self)
 
     alpha = 0
-    UIView.animate(withDuration: animationIn, delay: delayIn, options: [.curveEaseInOut, .beginFromCurrentState], animations: { 
+    UIView.animate(withDuration: animationIn, delay: delayIn, options: [.curveEaseInOut, .beginFromCurrentState], animations: {
       self.alpha = 1
       self.backgroundMask?.alpha = 1
     }) { (_) in
@@ -111,7 +124,7 @@ public extension PopTip {
   private func exitScale(completion: @escaping () -> Void) {
     transform = .identity
 
-    UIView.animate(withDuration: animationOut, delay: delayOut, options: [.curveEaseInOut, .beginFromCurrentState], animations: { 
+    UIView.animate(withDuration: animationOut, delay: delayOut, options: [.curveEaseInOut, .beginFromCurrentState], animations: {
       self.transform = CGAffineTransform(scaleX: 0.0001, y: 0.0001)
       self.backgroundMask?.alpha = 0
     }) { (_) in
