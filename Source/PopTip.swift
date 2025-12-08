@@ -788,6 +788,9 @@ open class PopTip: UIView {
     /// Hides the poptip and removes it from the view. The property `isVisible` will be set to `false` when the animation is complete and the poptip is removed from the parent view.
     ///
     /// - Parameter forced: Force the removal, ignoring running animations
+    /// 隐藏 PopTip 并从父视图移除
+    ///
+    /// - Parameter forced: 是否强制隐藏，忽略当前动画状态
     @objc open func hide(forced: Bool = false) {
         if !forced && (isAnimating || isPerformingExitAnimation) {
             return
@@ -797,17 +800,25 @@ open class PopTip: UIView {
         isAnimating = true
         dismissTimer?.invalidate()
         dismissTimer = nil
-        
-        // 确保移除手势识别器，避免内存泄漏或重复事件
-        if let gestureRecognizer = tapToRemoveGestureRecognizer {
-            containerView?.removeGestureRecognizer(gestureRecognizer)
-            tapToRemoveGestureRecognizer = nil
+
+        // ✅ 手势移除改成延迟到下一个 runloop
+        let hasTapToRemove = self.tapToRemoveGestureRecognizer != nil
+        let hasSwipeToRemove = self.swipeGestureRecognizer != nil
+
+        if hasTapToRemove || hasSwipeToRemove {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let gestureRecognizer = self.tapToRemoveGestureRecognizer {
+                    self.containerView?.removeGestureRecognizer(gestureRecognizer)
+                    self.tapToRemoveGestureRecognizer = nil
+                }
+                if let gestureRecognizer = self.swipeGestureRecognizer {
+                    self.containerView?.removeGestureRecognizer(gestureRecognizer)
+                    self.swipeGestureRecognizer = nil
+                }
+            }
         }
-        if let gestureRecognizer = swipeGestureRecognizer {
-            containerView?.removeGestureRecognizer(gestureRecognizer)
-            swipeGestureRecognizer = nil
-        }
-        
+
         let completion = {
             self.hostingController?.willMove(toParent: nil)
             self.customView?.removeFromSuperview()
@@ -889,6 +900,37 @@ open class PopTip: UIView {
         layer.shadowColor = shadowColor.cgColor
         
         CATransaction.commit()
+    }
+    
+    func updateCustomViewSize() {
+        guard let customView = customView, let containerView = containerView else { return }
+        
+        // 重新计算可用的最大宽度
+        let availableWidth = containerView.bounds.width - (edgeMargin * 2) - edgeInsets.horizontal - (padding * 2)
+        let oldMaxWidth = maxWidth
+        maxWidth = max(customView.frame.width, availableWidth)
+        
+        // 重新计算 textBounds
+        textBounds = textBounds(for: text, attributedText: attributedText, view: customView, with: font, padding: padding, edges: edgeInsets, in: maxWidth)
+        
+        // 如果尺寸发生了显著变化，需要重新布局整个气泡
+        if abs(oldMaxWidth - maxWidth) > 1.0 || abs(textBounds.width - customView.frame.width) > 1.0 {
+            // 调用完整的重新布局
+            setup()
+            setNeedsDisplay()
+        } else {
+            // 只是微调位置
+            if direction == .down {
+                textBounds.origin.y += arrowSize.height
+            } else if direction == .right {
+                textBounds.origin.x += arrowSize.height
+            }
+            
+            // 禁用隐式动画，直接更新 frame
+            CATransaction.setDisableActions(true)
+            customView.frame = textBounds
+            CATransaction.setDisableActions(false)
+        }
     }
     
     fileprivate func show(duration: TimeInterval? = nil) {
@@ -1056,11 +1098,11 @@ open class PopTip: UIView {
 }
 
 fileprivate extension UIEdgeInsets {
-    var horizontal: CGFloat {
-        return self.left + self.right
-    }
-    
-    var vertical: CGFloat {
-        return self.top + self.bottom
-    }
+  var horizontal: CGFloat {
+    return self.left + self.right
+  }
+
+  var vertical: CGFloat {
+    return self.top + self.bottom
+  }
 }
